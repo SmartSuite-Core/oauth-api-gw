@@ -8,6 +8,8 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
+const OAUTH_CLIENTS_TABLE string = "oauth_clients"
+
 /*
 validateClient function accepts 3 params:
 - clientID of type string
@@ -24,7 +26,7 @@ func ValidateClient(db *sql.DB, clientID string, clientSecret string, scopes []s
 	var storedHashedSecret string
 	var storedScopes string
 
-	query := `SELECT client_secret, scope FROM oauth_clients WHERE client_id = $1`
+	query := `SELECT client_secret, scope FROM ` + OAUTH_CLIENTS_TABLE + ` WHERE client_id = $1`
 	err := db.QueryRow(query, clientID).Scan(&storedHashedSecret, &storedScopes)
 	if err != nil {
 		return false, err

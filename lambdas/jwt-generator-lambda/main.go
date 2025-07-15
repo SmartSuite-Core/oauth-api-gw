@@ -20,9 +20,10 @@ import (
 
 var db *sql.DB
 
-var POSTGRESQL_URI string = os.Getenv("POSTGRESQL_URI") // "postgresql://<username>:<password>@<db-endpoint>:5432/app-clients-db?sslmode=require"
-// var KMS_KEY_ID string = os.Getenv("KMS_KEY_ID")         // "60a8cdd8-e3aa-4bc5-856e-1c8294dba9a9"
-// var API_GW_URL string = os.Getenv("API_GW_URL")         // "https://d9xszyeg4h.execute-api.us-east-2.amazonaws.com"
+var POSTGRESQL_URI string = os.Getenv("POSTGRESQL_URI")
+
+// var KMS_KEY_ID string = os.Getenv("KMS_KEY_ID")
+// var API_GW_URL string = os.Getenv("API_GW_URL")
 
 type Request struct {
 	ClientID      string   `json:"ClientID"`
