@@ -13,7 +13,7 @@ import (
 func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
 	fmt.Println("Event:", request)
 
-	body, err := json.Marshal("Protected Resource!")
+	body, err := json.Marshal("Super Secret && Protected Resource!")
 	if err != nil {
 		return events.APIGatewayProxyResponse{
 			StatusCode: 500,

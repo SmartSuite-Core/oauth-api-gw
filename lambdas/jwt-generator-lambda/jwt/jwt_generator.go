@@ -55,7 +55,7 @@ func GenerateJWT(ctx context.Context, clientId string, scope []string) (string, 
 	kmsClient := kms.NewFromConfig(cfg)
 
 	signInput := &kms.SignInput{
-		KeyId:            aws.String(KMS_KEY_ID), // KMS KEY ID
+		KeyId:            aws.String(KMS_KEY_ID),
 		Message:          []byte(message),
 		MessageType:      types.MessageTypeRaw,
 		SigningAlgorithm: types.SigningAlgorithmSpecRsassaPkcs1V15Sha256,

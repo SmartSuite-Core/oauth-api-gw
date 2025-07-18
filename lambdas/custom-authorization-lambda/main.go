@@ -2,50 +2,97 @@ package main
 
 import (
 	"context"
-	"encoding/json"
+	"crypto/rsa"
 	"fmt"
 	"log"
-
-	"github.com/SmartSuite-Core/oauth-api-gw/lambdas/custom-authorization-lambda/helpers"
-	"github.com/SmartSuite-Core/oauth-api-gw/lambdas/custom-authorization-lambda/jwt"
+	"os"
+	"strings"
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
+	"github.com/golang-jwt/jwt/v5"
 )
 
-type CustomAuthorizerEvent struct {
-	Type               string `json:"type"`
-	AuthorizationToken string `json:"authorizationToken"`
-	MethodArn          string `json:"methodArn"`
+var publicKey *rsa.PublicKey
+
+func init() {
+
+	/**
+		This needs to be changed!
+		Either move this Public Key to a SSM Parameter Store
+		Or use a Secrets Manager to store the Public Key
+		Research the costs of both and speed to see which is better...
+	**/
+	publicKeyData, err := os.ReadFile("Public_Key.pem")
+	if err != nil {
+		log.Fatalf("Failed to read public key: %v", err)
+	}
+
+	publicKey, err = jwt.ParseRSAPublicKeyFromPEM(publicKeyData)
+	if err != nil {
+		log.Fatalf("Failed to parse public key: %v", err)
+	}
 }
 
-func handler(ctx context.Context, event CustomAuthorizerEvent) (events.APIGatewayCustomAuthorizerResponse, error) {
-	log.Printf("Event received: %+v\n", event)
+func handler(ctx context.Context, request events.APIGatewayCustomAuthorizerRequest) (events.APIGatewayCustomAuthorizerResponse, error) {
 
-	token, err := helpers.GetToken(event.AuthorizationToken)
-	if err != nil {
-		log.Printf("Error extracting token: %v\n", err)
-		return events.APIGatewayCustomAuthorizerResponse{}, fmt.Errorf("Unauthorized")
+	tokenString := extractBearerToken(request.AuthorizationToken)
+	if tokenString == "" {
+		log.Println("No token provided")
+		return generatePolicy("", "Deny", request.MethodArn), nil
 	}
 
-	verified, err := jwt.VerifyJWT(token)
-	if err != nil {
-		log.Printf("JWT verification failed: %v\n", err)
-		return events.APIGatewayCustomAuthorizerResponse{}, fmt.Errorf("Unauthorized")
+	// log.Printf("Received token: %s\n", tokenString)
+
+	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+		if _, ok := token.Method.(*jwt.SigningMethodRSA); !ok {
+			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+		}
+		return publicKey, nil
+	})
+
+	if err != nil || !token.Valid {
+		log.Printf("Token validation failed: %v\n", err)
+		return generatePolicy("", "Deny", request.MethodArn), nil
 	}
 
-	log.Printf("Verified: %+v\n", verified)
-
-	if verified.IsValid {
-		policy := helpers.GeneratePolicy(verified.ClientID, "Allow", event.MethodArn, []string{verified.Scope})
-		policyJSON, _ := json.Marshal(policy)
-		log.Printf("Allow policy: %s\n", string(policyJSON))
-		return policy, nil
+	claims, ok := token.Claims.(jwt.MapClaims)
+	if !ok {
+		log.Println("Unable to parse JWT claims")
+		return generatePolicy("", "Deny", request.MethodArn), nil
 	}
 
-	denyPolicy := helpers.GeneratePolicy(verified.ClientID, "Deny", event.MethodArn, nil)
-	log.Printf("Deny policy generated\n")
-	return denyPolicy, nil
+	principalID, ok := claims["client_id"].(string)
+	if !ok || principalID == "" {
+		log.Println("client_id not found in token claims")
+		return generatePolicy("", "Deny", request.MethodArn), nil
+	}
+
+	return generatePolicy(principalID, "Allow", request.MethodArn), nil
+}
+
+func extractBearerToken(authHeader string) string {
+	parts := strings.Split(authHeader, " ")
+	if len(parts) == 2 && strings.EqualFold(parts[0], "Bearer") {
+		return parts[1]
+	}
+	return ""
+}
+
+func generatePolicy(principalID, effect, resource string) events.APIGatewayCustomAuthorizerResponse {
+	return events.APIGatewayCustomAuthorizerResponse{
+		PrincipalID: principalID,
+		PolicyDocument: events.APIGatewayCustomAuthorizerPolicy{
+			Version: "2012-10-17",
+			Statement: []events.IAMPolicyStatement{
+				{
+					Action:   []string{"execute-api:Invoke"},
+					Effect:   effect,
+					Resource: []string{resource},
+				},
+			},
+		},
+	}
 }
 
 func main() {
